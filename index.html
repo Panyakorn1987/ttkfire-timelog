@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>ลงเวลางาน Service</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --card2:#0b1220; --fg:#f1f5f9; --muted:#94a3b8;
+    --pri:#22c55e; --danger:#ef4444; --accent:#38bdf8; --border:#334155;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Noto Sans Thai","Segoe UI",Roboto,sans-serif;}
+  body{background:var(--bg); color:var(--fg); min-height:100vh; padding:16px; font-size:16px; line-height:1.5;}
+  .wrap{max-width:480px; margin:0 auto;}
+  h1{font-size:20px; margin-bottom:2px;}
+  h2{font-size:17px; margin-bottom:4px;}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:16px;}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px;}
+  label{display:block; font-size:13px; color:var(--muted); margin:12px 0 6px;}
+  select,input,textarea{width:100%; background:var(--card2); border:1px solid var(--border);
+    color:var(--fg); border-radius:10px; padding:12px; font-size:15px; outline:none;}
+  select:focus,input:focus,textarea:focus{border-color:var(--accent);}
+  textarea{min-height:72px; resize:vertical;}
+  button{width:100%; border:0; border-radius:12px; padding:14px; font-size:16px; font-weight:700;
+    cursor:pointer; margin-top:16px;}
+  button:disabled{opacity:.6;}
+  .btn-go{background:var(--pri); color:#04220f;}
+  .btn-stop{background:var(--danger); color:#fff;}
+  .btn-ghost{background:transparent; color:var(--accent); border:1px solid var(--border);
+    width:auto; padding:6px 12px; margin:0; font-size:13px;}
+  .row{display:flex; gap:8px; align-items:center; justify-content:space-between;}
+  .badge{display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700;}
+  .badge.ready{background:#334155; color:#cbd5e1;}
+  .badge.open{background:rgba(34,197,94,.15); color:var(--pri);}
+  .timer{font-size:34px; font-weight:800; text-align:center; letter-spacing:1px; margin:10px 0;
+    font-variant-numeric:tabular-nums;}
+  .kv{display:flex; justify-content:space-between; gap:12px; padding:7px 0;
+    border-bottom:1px dashed var(--border); font-size:14px;}
+  .kv:last-of-type{border:0;}
+  .kv span{color:var(--muted); flex:none;}
+  .kv b{font-weight:600; text-align:right;}
+  .loc{font-size:12px; color:var(--muted); margin-top:8px;}
+  .hist .item{border-bottom:1px solid var(--border); padding:10px 0;}
+  .hist .item:last-child{border:0;}
+  .hist .item .t{font-size:13px; color:var(--muted);}
+  .center{text-align:center;}
+  .muted{color:var(--muted);}
+  .hidden{display:none !important;}
+  .spinner{width:30px; height:30px; border:3px solid var(--border); border-top-color:var(--accent);
+    border-radius:50%; animation:spin 1s linear infinite; margin:36px auto;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%);
+    background:#111827; border:1px solid var(--border); padding:12px 18px; border-radius:10px;
+    font-size:14px; max-width:92%; z-index:99; display:none; box-shadow:0 8px 24px rgba(0,0,0,.4);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🧑‍🔧 ลงเวลางาน Service</h1>
+  <div class="sub">TTK Fire — บันทึกเข้า/ออกงาน พร้อมรายงานเข้ากลุ่มผู้บริหารอัตโนมัติ</div>
+
+  <div id="loading" class="card center">
+    <div class="spinner"></div><div class="muted">กำลังโหลด…</div>
+  </div>
+
+  <!-- ลงทะเบียนครั้งแรก -->
+  <div id="view-register" class="card hidden">
+    <h2>ลงทะเบียนพนักงาน</h2>
+    <div class="sub">ใช้งานครั้งแรก กรุณากรอกข้อมูล (ทำครั้งเดียว)</div>
+    <label>ชื่อ–นามสกุล</label>
+    <input id="reg-name" placeholder="เช่น สมชาย ใจดี">
+    <label>เบอร์โทร (ไม่บังคับ)</label>
+    <input id="reg-phone" inputmode="tel" placeholder="08x-xxx-xxxx">
+    <label>ตำแหน่ง</label>
+    <select id="reg-role">
+      <option>ช่างบริการ</option>
+      <option>หัวหน้าทีม</option>
+      <option>วิศวกร</option>
+      <option>อื่นๆ</option>
+    </select>
+    <button class="btn-go" id="btn-register">บันทึกการลงทะเบียน</button>
+  </div>
+
+  <!-- พร้อมเริ่มงาน -->
+  <div id="view-start" class="card hidden">
+    <div class="row">
+      <div><b id="hello-name">—</b><div class="muted" style="font-size:12px" id="hello-role"></div></div>
+      <span class="badge ready">พร้อมเริ่มงาน</span>
+    </div>
+    <label>สถานที่ทำงาน</label>
+    <select id="in-site"></select>
+    <label>ประเภทงาน</label>
+    <select id="in-task"></select>
+    <label>รายละเอียดงาน</label>
+    <textarea id="in-detail" placeholder="เช่น เปลี่ยนหัวสปริงเกอร์ ชั้น 3 จำนวน 12 จุด"></textarea>
+    <div class="loc" id="in-loc">📍 ระบบจะบันทึกพิกัด GPS ตอนกด “เริ่มงาน”</div>
+    <button class="btn-go" id="btn-checkin">🟢 เริ่มงาน</button>
+  </div>
+
+  <!-- กำลังทำงาน -->
+  <div id="view-working" class="card hidden">
+    <div class="row">
+      <b id="w-name">—</b><span class="badge open">● กำลังทำงาน</span>
+    </div>
+    <div class="timer" id="w-timer">00:00:00</div>
+    <div class="kv"><span>สถานที่</span><b id="w-site"></b></div>
+    <div class="kv"><span>ประเภทงาน</span><b id="w-task"></b></div>
+    <div class="kv"><span>รายละเอียด</span><b id="w-detail"></b></div>
+    <div class="kv"><span>เริ่มเมื่อ</span><b id="w-since"></b></div>
+    <div class="loc" id="w-loc">📍 ระบบจะบันทึกพิกัด GPS ตอนกด “เลิกงาน”</div>
+    <button class="btn-stop" id="btn-checkout">🔴 เลิกงาน</button>
+  </div>
+
+  <!-- ประวัติ -->
+  <div id="view-hist" class="card hidden">
+    <div class="row" style="margin-bottom:6px">
+      <b>ประวัติล่าสุด</b>
+      <button class="btn-ghost" id="btn-refresh">รีเฟรช</button>
+    </div>
+    <div class="hist" id="hist-list"><div class="muted center" style="padding:14px">—</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+  var API_URL = "https://script.google.com/macros/s/AKfycbxluA73dft9pgW9Uj6mp_eJ5CgNW6McAimTb5rd18LU09i2URWuxq80MN63VwojO-kvAw/exec";
+  var LIFF_ID = "2011332608-mTnD0VGK";
+
+  var STATE = { idToken:null, employee:null, openLog:null, sites:[], tasks:[], timer:null, requireLoc:false };
+
+  function $(id){ return document.getElementById(id); }
+  function showView(id){
+    ['view-register','view-start','view-working'].forEach(function(v){ $(v).classList.add('hidden'); });
+    $(id).classList.remove('hidden');
+  }
+  function toast(msg){
+    var t = $('toast'); t.textContent = msg; t.style.display = 'block';
+    clearTimeout(t._t); t._t = setTimeout(function(){ t.style.display = 'none'; }, 3800);
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+    });
+  }
+  function fmtDT(d){
+    try { return new Date(d).toLocaleString('th-TH', { dateStyle:'medium', timeStyle:'short' }); }
+    catch(e){ return String(d); }
+  }
+
+  // เรียก API: ใช้ google.script.run (ทำงานได้ในกรอบ sandbox ของ Apps Script)
+  // ถ้าไม่มี (กรณีโฮสต์หน้าเว็บที่อื่น) จะถอยไปใช้ fetch
+  function api(action, payload){
+    var body = Object.assign({ action: action, idToken: STATE.idToken }, payload || {});
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      return new Promise(function(resolve, reject){
+        google.script.run
+          .withSuccessHandler(function(txt){
+            var d;
+            try { d = JSON.parse(txt); }
+            catch (e) { return reject(new Error('ข้อมูลตอบกลับผิดรูปแบบ')); }
+            if (!d.ok) return reject(new Error(d.error || 'เกิดข้อผิดพลาด'));
+            resolve(d);
+          })
+          .withFailureHandler(function(err){
+            reject(new Error((err && err.message) || 'เรียกเซิร์ฟเวอร์ไม่สำเร็จ'));
+          })
+          .apiCall(JSON.stringify(body));
+      });
+    }
+
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body)
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (!d.ok) throw new Error(d.error || 'เกิดข้อผิดพลาด');
+      return d;
+    });
+  }
+
+  function getLocation(){
+    return new Promise(function(resolve){
+      if (!navigator.geolocation) return resolve({});
+      navigator.geolocation.getCurrentPosition(
+        function(p){ resolve({
+          lat: +p.coords.latitude.toFixed(6),
+          lng: +p.coords.longitude.toFixed(6)
+        }); },
+        function(){ resolve({}); },
+        { enableHighAccuracy:true, timeout:8000, maximumAge:0 }
+      );
+    });
+  }
+
+  function fail(msg, detail){
+    $('loading').innerHTML =
+      '<div class="center"><div style="font-size:34px">⚠️</div>'
+      + '<div style="color:#ef4444; font-weight:700; margin:8px 0">' + esc(msg) + '</div>'
+      + (detail ? '<div class="muted" style="font-size:12px; word-break:break-all">' + esc(detail) + '</div>' : '')
+      + '</div>';
+  }
+
+  function boot(){
+    if (!LIFF_ID) { return fail('ยังไม่ได้ตั้งค่า LIFF_ID', 'กรอกค่า LIFF_ID ในแท็บ Config ของ Google Sheet แล้ว Deploy ใหม่'); }
+    if (typeof liff === 'undefined') { return fail('โหลด LIFF SDK ไม่สำเร็จ', 'ตรวจสอบอินเทอร์เน็ต แล้วลองเปิดใหม่'); }
+
+    // กันกรณี liff.init ค้างไม่ตอบกลับ
+    var settled = false;
+    var watchdog = setTimeout(function(){
+      if (!settled) fail('เชื่อมต่อ LINE ไม่สำเร็จ (หมดเวลา)', 'LIFF ID: ' + LIFF_ID);
+    }, 15000);
+
+    liff.init({ liffId: LIFF_ID }).then(function(){
+      settled = true; clearTimeout(watchdog);
+      if (!liff.isLoggedIn()) { liff.login(); return; }
+      STATE.idToken = liff.getIDToken();
+      if (!STATE.idToken) { return fail('ไม่ได้รับ ID token', 'ตรวจว่า LIFF ติ๊ก scope "openid" แล้ว'); }
+      return api('bootstrap').then(function(d){
+        STATE.employee = d.employee;
+        STATE.openLog = d.openLog;
+        STATE.sites = d.sites || [];
+        STATE.tasks = d.taskTypes || [];
+        STATE.requireLoc = !!d.requireLocation;
+        $('loading').classList.add('hidden');
+        $('view-hist').classList.remove('hidden');
+        if (!d.registered) {
+          $('reg-name').value = d.lineName || '';
+          showView('view-register');
+        } else {
+          renderHome();
+          loadHistory();
+        }
+      });
+    }).catch(function(e){
+      settled = true; clearTimeout(watchdog);
+      fail('โหลดไม่สำเร็จ', (e && (e.message || e.code)) || String(e));
+    });
+  }
+
+  window.addEventListener('error', function(ev){
+    if ($('loading') && !$('loading').classList.contains('hidden')) {
+      fail('เกิดข้อผิดพลาดในหน้าแอป', ev.message);
+    }
+  });
+
+  function renderHome(){
+    var emp = STATE.employee;
+    if (STATE.openLog) {
+      $('w-name').textContent = emp.name;
+      $('w-site').textContent = STATE.openLog.site;
+      $('w-task').textContent = STATE.openLog.task;
+      $('w-detail').textContent = STATE.openLog.detail || '-';
+      $('w-since').textContent = fmtDT(STATE.openLog.checkInAt);
+      startTimer(new Date(STATE.openLog.checkInAt));
+      showView('view-working');
+    } else {
+      $('hello-name').textContent = emp.name;
+      $('hello-role').textContent = emp.role || '';
+      $('in-site').innerHTML = STATE.sites.map(function(s){
+        return '<option>' + esc(s.name) + '</option>'; }).join('');
+      $('in-task').innerHTML = STATE.tasks.map(function(t){
+        return '<option>' + esc(t.name) + '</option>'; }).join('');
+      showView('view-start');
+    }
+  }
+
+  function startTimer(since){
+    clearInterval(STATE.timer);
+    function tick(){
+      var s = Math.max(0, Math.floor((Date.now() - since.getTime()) / 1000));
+      var h = String(Math.floor(s / 3600)).padStart(2, '0');
+      var m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+      var ss = String(s % 60).padStart(2, '0');
+      $('w-timer').textContent = h + ':' + m + ':' + ss;
+    }
+    tick();
+    STATE.timer = setInterval(tick, 1000);
+  }
+
+  function doRegister(){
+    var name = $('reg-name').value.trim();
+    if (!name) return toast('กรุณากรอกชื่อ');
+    var btn = $('btn-register'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+    api('register', { name: name, phone: $('reg-phone').value.trim(), role: $('reg-role').value })
+      .then(function(d){
+        STATE.employee = d.employee;
+        toast('ลงทะเบียนเรียบร้อย ✅');
+        renderHome(); loadHistory();
+      })
+      .catch(function(e){ toast(e.message); })
+      .finally(function(){ btn.disabled = false; btn.textContent = 'บันทึกการลงทะเบียน'; });
+  }
+
+  function doCheckin(){
+    var btn = $('btn-checkin'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+    $('in-loc').textContent = '📍 กำลังอ่านพิกัด GPS…';
+    var site = $('in-site').value, task = $('in-task').value, detail = $('in-detail').value.trim();
+    getLocation().then(function(loc){
+      if (STATE.requireLoc && !loc.lat) { throw new Error('กรุณาอนุญาตการเข้าถึงตำแหน่ง (GPS)'); }
+      return api('checkin', { siteName: site, taskType: task, taskDetail: detail, lat: loc.lat, lng: loc.lng });
+    }).then(function(d){
+      STATE.openLog = { logId: d.logId, site: site, task: task, detail: detail, checkInAt: d.checkInAt };
+      toast('เริ่มงานแล้ว ✅ ส่งรายงานเข้ากลุ่มผู้บริหารแล้ว');
+      renderHome(); loadHistory();
+    }).catch(function(e){
+      toast(e.message);
+      $('in-loc').textContent = '📍 ระบบจะบันทึกพิกัด GPS ตอนกด “เริ่มงาน”';
+    }).finally(function(){ btn.disabled = false; btn.textContent = '🟢 เริ่มงาน'; });
+  }
+
+  function doCheckout(){
+    if (!confirm('ยืนยันเลิกงาน?')) return;
+    var btn = $('btn-checkout'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+    $('w-loc').textContent = '📍 กำลังอ่านพิกัด GPS…';
+    getLocation().then(function(loc){
+      if (STATE.requireLoc && !loc.lat) { throw new Error('กรุณาอนุญาตการเข้าถึงตำแหน่ง (GPS)'); }
+      return api('checkout', { logId: STATE.openLog.logId, lat: loc.lat, lng: loc.lng });
+    }).then(function(d){
+      STATE.openLog = null; clearInterval(STATE.timer);
+      toast('เลิกงานแล้ว ✅ รวม ' + d.durationHours + ' ชม.');
+      renderHome(); loadHistory();
+    }).catch(function(e){
+      toast(e.message);
+      $('w-loc').textContent = '📍 ระบบจะบันทึกพิกัด GPS ตอนกด “เลิกงาน”';
+    }).finally(function(){ btn.disabled = false; btn.textContent = '🔴 เลิกงาน'; });
+  }
+
+  function loadHistory(){
+    api('history', { limit: 10 }).then(function(d){
+      if (!d.logs.length) {
+        $('hist-list').innerHTML = '<div class="muted center" style="padding:14px">ยังไม่มีประวัติ</div>';
+        return;
+      }
+      $('hist-list').innerHTML = d.logs.map(function(l){
+        var out = l.checkOut
+          ? esc(l.checkOut) + (l.duration ? ' · ' + l.duration + ' ชม.' : '')
+          : '<span style="color:#22c55e">กำลังทำงาน</span>';
+        return '<div class="item">'
+          + '<div class="row"><b>' + esc(l.site) + '</b><span class="muted">' + esc(l.date) + '</span></div>'
+          + '<div class="t">' + esc(l.task) + (l.detail ? ' — ' + esc(l.detail) : '') + '</div>'
+          + '<div class="t">' + esc(l.checkIn) + ' → ' + out + '</div>'
+          + '</div>';
+      }).join('');
+    }).catch(function(){});
+  }
+
+  $('btn-register').addEventListener('click', doRegister);
+  $('btn-checkin').addEventListener('click', doCheckin);
+  $('btn-checkout').addEventListener('click', doCheckout);
+  $('btn-refresh').addEventListener('click', loadHistory);
+
+  boot();
+</script>
+</body>
+</html>
