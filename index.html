@@ -94,8 +94,18 @@
     </div>
     <label>สถานที่ทำงาน</label>
     <select id="in-site"></select>
+    <div id="new-site-box" class="hidden">
+      <label>ชื่อสถานที่ใหม่</label>
+      <input id="in-new-site" placeholder="เช่น บจก. เอบีซี โรงงานระยอง">
+      <div class="loc">💾 ระบบจะบันทึกสถานที่นี้ไว้ให้ ครั้งหน้าเลือกจากรายการได้เลย</div>
+    </div>
     <label>ประเภทงาน</label>
     <select id="in-task"></select>
+    <div id="new-task-box" class="hidden">
+      <label>ชื่อประเภทงานใหม่</label>
+      <input id="in-new-task" placeholder="เช่น ล้างถังดับเพลิง">
+      <div class="loc">💾 ระบบจะบันทึกประเภทงานนี้ไว้ให้ ครั้งหน้าเลือกจากรายการได้เลย</div>
+    </div>
     <label>รายละเอียดงาน</label>
     <textarea id="in-detail" placeholder="เช่น เปลี่ยนหัวสปริงเกอร์ ชั้น 3 จำนวน 12 จุด"></textarea>
     <div class="loc" id="in-loc">📍 ระบบจะบันทึกพิกัด GPS ตอนกด “เริ่มงาน”</div>
@@ -270,9 +280,12 @@
       $('hello-name').textContent = emp.name;
       $('hello-role').textContent = emp.role || '';
       $('in-site').innerHTML = STATE.sites.map(function(s){
-        return '<option>' + esc(s.name) + '</option>'; }).join('');
+        return '<option>' + esc(s.name) + '</option>'; }).join('')
+        + '<option value="__NEW__">➕ เพิ่มสถานที่ใหม่…</option>';
       $('in-task').innerHTML = STATE.tasks.map(function(t){
-        return '<option>' + esc(t.name) + '</option>'; }).join('');
+        return '<option>' + esc(t.name) + '</option>'; }).join('')
+        + '<option value="__NEW__">➕ เพิ่มประเภทงานใหม่…</option>';
+      onSiteChange(); onTaskChange();
       showView('view-start');
     }
   }
@@ -305,16 +318,39 @@
       .finally(function(){ btn.disabled = false; btn.textContent = 'บันทึกการลงทะเบียน'; });
   }
 
+  function onSiteChange(){
+    var isNew = $('in-site').value === '__NEW__';
+    $('new-site-box').classList.toggle('hidden', !isNew);
+    if (isNew) $('in-new-site').focus();
+  }
+  function onTaskChange(){
+    var isNew = $('in-task').value === '__NEW__';
+    $('new-task-box').classList.toggle('hidden', !isNew);
+    if (isNew) $('in-new-task').focus();
+  }
+
   function doCheckin(){
+    var site = $('in-site').value, task = $('in-task').value, detail = $('in-detail').value.trim();
+    var newSite = $('in-new-site').value.trim(), newTask = $('in-new-task').value.trim();
+    if (site === '__NEW__' && !newSite) return toast('กรุณากรอกชื่อสถานที่ใหม่');
+    if (task === '__NEW__' && !newTask) return toast('กรุณากรอกชื่อประเภทงานใหม่');
+
     var btn = $('btn-checkin'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
     $('in-loc').textContent = '📍 กำลังอ่านพิกัด GPS…';
-    var site = $('in-site').value, task = $('in-task').value, detail = $('in-detail').value.trim();
     getLocation().then(function(loc){
       if (STATE.requireLoc && !loc.lat) { throw new Error('กรุณาอนุญาตการเข้าถึงตำแหน่ง (GPS)'); }
-      return api('checkin', { siteName: site, taskType: task, taskDetail: detail, lat: loc.lat, lng: loc.lng });
+      return api('checkin', { siteName: site, newSite: newSite,
+                              taskType: task, newTask: newTask,
+                              taskDetail: detail, lat: loc.lat, lng: loc.lng });
     }).then(function(d){
-      STATE.openLog = { logId: d.logId, site: site, task: task, detail: detail, checkInAt: d.checkInAt };
-      toast('เริ่มงานแล้ว ✅ ส่งรายงานเข้ากลุ่มผู้บริหารแล้ว');
+      STATE.openLog = { logId: d.logId, site: d.siteName || site, task: d.taskType || task,
+                        detail: detail, checkInAt: d.checkInAt };
+      $('in-new-site').value = ''; $('in-new-task').value = '';
+      if (d.addedSite && d.siteName) STATE.sites.push({ name: d.siteName });
+      if (d.addedTask && d.taskType) STATE.tasks.push({ name: d.taskType });
+      toast((d.addedSite || d.addedTask)
+        ? 'เริ่มงานแล้ว ✅ บันทึกรายการใหม่เรียบร้อย'
+        : 'เริ่มงานแล้ว ✅ ส่งรายงานเข้ากลุ่มผู้บริหารแล้ว');
       renderHome(); loadHistory();
     }).catch(function(e){
       toast(e.message);
@@ -362,6 +398,8 @@
   $('btn-checkin').addEventListener('click', doCheckin);
   $('btn-checkout').addEventListener('click', doCheckout);
   $('btn-refresh').addEventListener('click', loadHistory);
+  $('in-site').addEventListener('change', onSiteChange);
+  $('in-task').addEventListener('change', onTaskChange);
 
   boot();
 </script>
