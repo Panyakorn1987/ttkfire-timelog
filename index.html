@@ -203,6 +203,7 @@
 <script>
   var API_URL = "https://script.google.com/macros/s/AKfycbxluA73dft9pgW9Uj6mp_eJ5CgNW6McAimTb5rd18LU09i2URWuxq80MN63VwojO-kvAw/exec";
   var LIFF_ID = "2011332608-mTnD0VGK";
+  var APP_VERSION = "2026.08.30-6";   // เทียบกับเวอร์ชันเซิร์ฟเวอร์ เพื่อเตือนเมื่อลืม Deploy
 
   var STATE = { idToken:null, employee:null, openLog:null, fixable:null,
                 sites:[], tasks:[], timer:null, requireLoc:false };
@@ -306,6 +307,19 @@
       STATE.idToken = liff.getIDToken();
       if (!STATE.idToken) { return fail('ไม่ได้รับ ID token', 'ตรวจว่า LIFF ติ๊ก scope "openid" แล้ว'); }
       return api('bootstrap').then(function(d){
+        // เตือนเมื่อโค้ดเซิร์ฟเวอร์กับหน้าเว็บคนละเวอร์ชัน (ลืม Deploy)
+        if (d.serverVersion !== APP_VERSION) {
+          var w = document.createElement('div');
+          w.className = 'card';
+          w.style.cssText = 'border-color:#f59e0b;background:rgba(245,158,11,.12)';
+          w.innerHTML = '<b style="color:#f59e0b">⚠️ เวอร์ชันไม่ตรงกัน</b>'
+            + '<div class="muted" style="font-size:13px;margin-top:6px">'
+            + 'หน้าเว็บ: <b>' + esc(APP_VERSION) + '</b><br>'
+            + 'เซิร์ฟเวอร์: <b>' + esc(d.serverVersion || 'เก่ากว่านี้') + '</b><br><br>'
+            + 'ฟีเจอร์ใหม่อาจยังใช้ไม่ได้ — ผู้ดูแลต้องไปที่ Apps Script แล้วกด '
+            + 'Deploy → Manage deployments → ✏️ → <b>New version</b> → Deploy</div>';
+          document.querySelector('.wrap').insertBefore(w, $('loading').nextSibling);
+        }
         STATE.employee = d.employee;
         STATE.openLog = d.openLog;
         STATE.fixable = d.fixable;
