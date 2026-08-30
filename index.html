@@ -79,6 +79,10 @@
       <option>วิศวกร</option>
       <option>อื่นๆ</option>
     </select>
+    <div id="reg-code-box" class="hidden">
+      <label>รหัสลงทะเบียน 🔒</label>
+      <input id="reg-code" inputmode="numeric" autocomplete="off" placeholder="สอบถามจากผู้ดูแลระบบ">
+    </div>
     <button class="btn-go" id="btn-register">บันทึกการลงทะเบียน</button>
   </div>
 
@@ -126,8 +130,8 @@
 
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
-  var API_URL = "https://script.google.com/macros/s/AKfycbxluA73dft9pgW9Uj6mp_eJ5CgNW6McAimTb5rd18LU09i2URWuxq80MN63VwojO-kvAw/exec";
-  var LIFF_ID = "2011332608-mTnD0VGK";
+  var API_URL = "<?= WEB_APP_URL ?>";
+  var LIFF_ID = "<?= LIFF_ID ?>";
 
   var STATE = { idToken:null, employee:null, openLog:null, sites:[], tasks:[], timer:null, requireLoc:false };
 
@@ -185,12 +189,16 @@
   function getLocation(){
     return new Promise(function(resolve){
       if (!navigator.geolocation) return resolve({});
+      var done = false;
+      function finish(v){ if (!done) { done = true; resolve(v); } }
+      // กันกรณี geolocation ไม่เรียก callback กลับมาเลย (บางเบราว์เซอร์ในแอป)
+      setTimeout(function(){ finish({}); }, 9000);
       navigator.geolocation.getCurrentPosition(
-        function(p){ resolve({
+        function(p){ finish({
           lat: +p.coords.latitude.toFixed(6),
           lng: +p.coords.longitude.toFixed(6)
         }); },
-        function(){ resolve({}); },
+        function(){ finish({}); },
         { enableHighAccuracy:true, timeout:8000, maximumAge:0 }
       );
     });
@@ -229,6 +237,7 @@
         $('view-hist').classList.remove('hidden');
         if (!d.registered) {
           $('reg-name').value = d.lineName || '';
+          if (d.requireCode) $('reg-code-box').classList.remove('hidden');
           showView('view-register');
         } else {
           renderHome();
@@ -285,7 +294,8 @@
     var name = $('reg-name').value.trim();
     if (!name) return toast('กรุณากรอกชื่อ');
     var btn = $('btn-register'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
-    api('register', { name: name, phone: $('reg-phone').value.trim(), role: $('reg-role').value })
+    api('register', { name: name, phone: $('reg-phone').value.trim(), role: $('reg-role').value,
+                      code: $('reg-code').value.trim() })
       .then(function(d){
         STATE.employee = d.employee;
         toast('ลงทะเบียนเรียบร้อย ✅');
