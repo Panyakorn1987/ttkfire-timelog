@@ -41,6 +41,17 @@
   .kv span{color:var(--muted); flex:none;}
   .kv b{font-weight:600; text-align:right;}
   .loc{font-size:12px; color:var(--muted); margin-top:8px;}
+  .chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;}
+  .chips button{width:auto; flex:1; min-width:64px; margin:0; padding:8px 4px; font-size:13px;
+    font-weight:600; background:var(--card2); color:var(--muted); border:1px solid var(--border);}
+  .chips button.on{background:var(--accent); color:#04220f; border-color:var(--accent);}
+  .two{display:flex; gap:8px;}
+  .two>div{flex:1;}
+  .sumbar{display:flex; gap:8px; margin-top:14px;}
+  .sumbar div{flex:1; background:var(--card2); border:1px solid var(--border);
+    border-radius:10px; padding:10px; text-align:center;}
+  .sumbar b{display:block; font-size:20px; color:var(--accent);}
+  .sumbar span{font-size:11px; color:var(--muted);}
   .hist .item{border-bottom:1px solid var(--border); padding:10px 0;}
   .hist .item:last-child{border:0;}
   .hist .item .t{font-size:13px; color:var(--muted);}
@@ -151,6 +162,29 @@
     <div class="center" style="margin-top:10px">
       <button class="btn-ghost" id="btn-fix-skip">เวลาที่ระบบปิดถูกต้องแล้ว</button>
     </div>
+  </div>
+
+  <!-- ดูงานทีมงาน (เฉพาะผู้ดูแล) -->
+  <div id="view-team" class="card hidden">
+    <div class="row" style="margin-bottom:4px">
+      <b>👥 ดูงานทีมงาน</b>
+      <span class="muted" style="font-size:11px">สำหรับผู้ดูแล</span>
+    </div>
+    <label>ช่วงเวลา</label>
+    <div class="chips" id="t-presets">
+      <button data-days="0">วันนี้</button>
+      <button data-days="6" class="on">7 วัน</button>
+      <button data-days="29">30 วัน</button>
+    </div>
+    <div class="two">
+      <div><label>จากวันที่</label><input type="date" id="t-from"></div>
+      <div><label>ถึงวันที่</label><input type="date" id="t-to"></div>
+    </div>
+    <label>พนักงาน</label>
+    <select id="t-emp"></select>
+    <button class="btn-go" id="btn-team">ดูข้อมูล</button>
+    <div id="t-sum"></div>
+    <div class="hist" id="t-list"></div>
   </div>
 
   <!-- ประวัติ -->
@@ -285,6 +319,7 @@
           if (d.requireCode) $('reg-code-box').classList.remove('hidden');
           showView('view-register');
         } else {
+          if (d.isAdmin) setupTeam(d.employees || []);
           renderHome();
           loadHistory();
         }
@@ -458,6 +493,61 @@
       .finally(function(){ btn.disabled = false; btn.textContent = 'บันทึกเวลาที่ถูกต้อง'; });
   }
 
+  // ---------- หน้าดูงานทีมงาน (เฉพาะผู้ดูแล) ----------
+  function ymd(d){
+    var p=function(n){return String(n).padStart(2,'0');};
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+  }
+  function setRange(days){
+    $('t-to').value = ymd(new Date());
+    $('t-from').value = ymd(new Date(Date.now() - days*86400000));
+  }
+  function setupTeam(emps){
+    $('t-emp').innerHTML = '<option value="ALL">— ทุกคน —</option>'
+      + emps.map(function(e){
+          return '<option value="'+esc(e.userId)+'">'+esc(e.name)+(e.active?'':' (ปิดใช้งาน)')+'</option>';
+        }).join('');
+    setRange(6);
+    $('view-team').classList.remove('hidden');
+    loadTeam();
+  }
+  function loadTeam(){
+    var btn = $('btn-team'); btn.disabled = true; btn.textContent = 'กำลังโหลด…';
+    $('t-list').innerHTML = '<div class="muted center" style="padding:14px">กำลังโหลด…</div>';
+    api('teamLogs', { from: $('t-from').value, to: $('t-to').value, employee: $('t-emp').value })
+      .then(function(d){
+        $('t-sum').innerHTML =
+          '<div class="sumbar">'
+        + '<div><b>'+d.totalJobs+'</b><span>จำนวนงาน</span></div>'
+        + '<div><b>'+d.totalHours+'</b><span>ชั่วโมงรวม</span></div></div>';
+        if (!d.logs.length){
+          $('t-list').innerHTML = '<div class="muted center" style="padding:14px">ไม่พบข้อมูลในช่วงที่เลือก</div>';
+          return;
+        }
+        $('t-list').innerHTML = d.logs.map(function(l){
+          var mark = l.status === 'CLOSED_MANUAL' ? ' ✍️'
+                   : l.status === 'AUTO_CLOSED'   ? ' 🤖' : '';
+          var out = l.checkOut
+            ? esc(l.checkOut) + (l.duration ? ' · ' + l.duration + ' ชม.' : '') + mark
+            : '<span style="color:#22c55e">กำลังทำงาน</span>';
+          return '<div class="item">'
+            + '<div class="row"><b>'+esc(l.name)+'</b><span class="muted">'+esc(l.date)+'</span></div>'
+            + '<div class="t">📍 '+esc(l.site)+'</div>'
+            + '<div class="t">🔧 '+esc(l.task)+(l.detail?' — '+esc(l.detail):'')+'</div>'
+            + '<div class="t">'+esc(l.checkIn)+' → '+out+'</div>'
+            + (l.map?'<div class="t"><a href="'+esc(l.map)+'" target="_blank" style="color:var(--accent)">🗺️ ดูแผนที่</a></div>':'')
+            + '</div>';
+        }).join('')
+        + (d.totalJobs > d.shown
+            ? '<div class="muted center" style="padding:10px;font-size:12px">แสดง '+d.shown+' จาก '+d.totalJobs+' รายการ — ดูทั้งหมดใน Google Sheet</div>'
+            : '');
+      })
+      .catch(function(e){
+        $('t-list').innerHTML = '<div class="center" style="padding:14px;color:#ef4444">'+esc(e.message)+'</div>';
+      })
+      .finally(function(){ btn.disabled = false; btn.textContent = 'ดูข้อมูล'; });
+  }
+
   function loadHistory(){
     api('history', { limit: 10 }).then(function(d){
       if (!d.logs.length) {
@@ -485,6 +575,14 @@
   $('btn-refresh').addEventListener('click', loadHistory);
   $('in-site').addEventListener('change', onSiteChange);
   $('in-task').addEventListener('change', onTaskChange);
+  $('btn-team').addEventListener('click', loadTeam);
+  $('t-presets').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    Array.prototype.forEach.call(this.children, function(c){ c.classList.remove('on'); });
+    b.classList.add('on');
+    setRange(Number(b.dataset.days));
+    loadTeam();
+  });
   $('btn-checkout-manual').addEventListener('click', doCheckoutManual);
   $('btn-fix').addEventListener('click', doFix);
   $('btn-fix-skip').addEventListener('click', function(){
