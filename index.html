@@ -124,6 +124,33 @@
     <div class="kv"><span>เริ่มเมื่อ</span><b id="w-since"></b></div>
     <div class="loc" id="w-loc">📍 ระบบจะบันทึกพิกัด GPS ตอนกด “เลิกงาน”</div>
     <button class="btn-stop" id="btn-checkout">🔴 เลิกงาน</button>
+    <div class="center" style="margin-top:12px">
+      <button class="btn-ghost" id="btn-manual-toggle">🕐 ลืมกด? ระบุเวลาเลิกงานเอง</button>
+    </div>
+    <div id="manual-box" class="hidden">
+      <label>เวลาที่เลิกงานจริง</label>
+      <input type="datetime-local" id="in-end-at">
+      <div class="loc">✍️ จะติดสัญลักษณ์ว่าเป็นการกรอกเวลาเอง และไม่บันทึกพิกัด GPS</div>
+      <button class="btn-stop" id="btn-checkout-manual">บันทึกเวลาที่ระบุ</button>
+    </div>
+  </div>
+
+  <!-- ระบบปิดงานให้อัตโนมัติ — ให้แก้เวลาจริงได้ -->
+  <div id="view-fix" class="card hidden">
+    <div class="row">
+      <b>⚠️ ระบบปิดงานให้อัตโนมัติ</b>
+    </div>
+    <div class="sub" style="margin:6px 0 0">งานนี้ค้างข้ามคืน ระบบปิดให้ที่ 23:59 — ถ้าไม่ตรงกรุณาแก้เวลาจริง</div>
+    <div class="kv"><span>สถานที่</span><b id="f-site"></b></div>
+    <div class="kv"><span>ประเภทงาน</span><b id="f-task"></b></div>
+    <div class="kv"><span>เข้างาน</span><b id="f-in"></b></div>
+    <div class="kv"><span>ระบบปิดที่</span><b id="f-auto"></b></div>
+    <label>เวลาที่เลิกงานจริง</label>
+    <input type="datetime-local" id="in-fix-at">
+    <button class="btn-go" id="btn-fix">บันทึกเวลาที่ถูกต้อง</button>
+    <div class="center" style="margin-top:10px">
+      <button class="btn-ghost" id="btn-fix-skip">เวลาที่ระบบปิดถูกต้องแล้ว</button>
+    </div>
   </div>
 
   <!-- ประวัติ -->
@@ -143,12 +170,19 @@
   var API_URL = "https://script.google.com/macros/s/AKfycbxluA73dft9pgW9Uj6mp_eJ5CgNW6McAimTb5rd18LU09i2URWuxq80MN63VwojO-kvAw/exec";
   var LIFF_ID = "2011332608-mTnD0VGK";
 
-  var STATE = { idToken:null, employee:null, openLog:null, sites:[], tasks:[], timer:null, requireLoc:false };
+  var STATE = { idToken:null, employee:null, openLog:null, fixable:null,
+                sites:[], tasks:[], timer:null, requireLoc:false };
 
   function $(id){ return document.getElementById(id); }
   function showView(id){
-    ['view-register','view-start','view-working'].forEach(function(v){ $(v).classList.add('hidden'); });
+    ['view-register','view-start','view-working','view-fix'].forEach(function(v){ $(v).classList.add('hidden'); });
     $(id).classList.remove('hidden');
+  }
+  // ค่าสำหรับช่อง datetime-local ("YYYY-MM-DDTHH:mm" ตามเวลาเครื่อง)
+  function toLocalInput(d){
+    var x = new Date(d), p = function(n){ return String(n).padStart(2,'0'); };
+    return x.getFullYear() + '-' + p(x.getMonth()+1) + '-' + p(x.getDate())
+         + 'T' + p(x.getHours()) + ':' + p(x.getMinutes());
   }
   function toast(msg){
     var t = $('toast'); t.textContent = msg; t.style.display = 'block';
@@ -240,6 +274,7 @@
       return api('bootstrap').then(function(d){
         STATE.employee = d.employee;
         STATE.openLog = d.openLog;
+        STATE.fixable = d.fixable;
         STATE.sites = d.sites || [];
         STATE.tasks = d.taskTypes || [];
         STATE.requireLoc = !!d.requireLocation;
@@ -268,6 +303,15 @@
 
   function renderHome(){
     var emp = STATE.employee;
+    if (STATE.fixable) {
+      $('f-site').textContent = STATE.fixable.site;
+      $('f-task').textContent = STATE.fixable.task;
+      $('f-in').textContent = fmtDT(STATE.fixable.checkInAt);
+      $('f-auto').textContent = fmtDT(STATE.fixable.autoClosedAt);
+      $('in-fix-at').value = toLocalInput(STATE.fixable.autoClosedAt);
+      showView('view-fix');
+      return;
+    }
     if (STATE.openLog) {
       $('w-name').textContent = emp.name;
       $('w-site').textContent = STATE.openLog.site;
@@ -366,13 +410,48 @@
       if (STATE.requireLoc && !loc.lat) { throw new Error('กรุณาอนุญาตการเข้าถึงตำแหน่ง (GPS)'); }
       return api('checkout', { logId: STATE.openLog.logId, lat: loc.lat, lng: loc.lng });
     }).then(function(d){
-      STATE.openLog = null; clearInterval(STATE.timer);
-      toast('เลิกงานแล้ว ✅ รวม ' + d.durationHours + ' ชม.');
-      renderHome(); loadHistory();
+      finishCheckout(d);
     }).catch(function(e){
       toast(e.message);
       $('w-loc').textContent = '📍 ระบบจะบันทึกพิกัด GPS ตอนกด “เลิกงาน”';
     }).finally(function(){ btn.disabled = false; btn.textContent = '🔴 เลิกงาน'; });
+  }
+
+  // เลิกงานโดยระบุเวลาเอง (กรณีลืมกด)
+  function doCheckoutManual(){
+    var endAt = $('in-end-at').value;
+    if (!endAt) return toast('กรุณาเลือกเวลาที่เลิกงานจริง');
+    if (!confirm('บันทึกเวลาเลิกงาน ' + endAt.replace('T', ' ') + ' ?')) return;
+    var btn = $('btn-checkout-manual'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+    api('checkout', { logId: STATE.openLog.logId, endAt: endAt })
+      .then(function(d){
+        $('manual-box').classList.add('hidden');
+        finishCheckout(d);
+      })
+      .catch(function(e){ toast(e.message); })
+      .finally(function(){ btn.disabled = false; btn.textContent = 'บันทึกเวลาที่ระบุ'; });
+  }
+
+  function finishCheckout(d){
+    STATE.openLog = null; clearInterval(STATE.timer);
+    toast('เลิกงานแล้ว ✅ รวม ' + d.durationHours + ' ชม.'
+          + (d.manual ? ' (กรอกเวลาเอง)' : ''));
+    renderHome(); loadHistory();
+  }
+
+  // แก้เวลาของงานที่ระบบปิดอัตโนมัติ
+  function doFix(){
+    var endAt = $('in-fix-at').value;
+    if (!endAt) return toast('กรุณาเลือกเวลาที่เลิกงานจริง');
+    var btn = $('btn-fix'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+    api('fixCheckout', { endAt: endAt })
+      .then(function(d){
+        STATE.fixable = null;
+        toast('แก้เวลาเรียบร้อย ✅ รวม ' + d.durationHours + ' ชม.');
+        renderHome(); loadHistory();
+      })
+      .catch(function(e){ toast(e.message); })
+      .finally(function(){ btn.disabled = false; btn.textContent = 'บันทึกเวลาที่ถูกต้อง'; });
   }
 
   function loadHistory(){
@@ -382,8 +461,10 @@
         return;
       }
       $('hist-list').innerHTML = d.logs.map(function(l){
+        var mark = l.status === 'CLOSED_MANUAL' ? ' ✍️'
+                 : l.status === 'AUTO_CLOSED'   ? ' 🤖' : '';
         var out = l.checkOut
-          ? esc(l.checkOut) + (l.duration ? ' · ' + l.duration + ' ชม.' : '')
+          ? esc(l.checkOut) + (l.duration ? ' · ' + l.duration + ' ชม.' : '') + mark
           : '<span style="color:#22c55e">กำลังทำงาน</span>';
         return '<div class="item">'
           + '<div class="row"><b>' + esc(l.site) + '</b><span class="muted">' + esc(l.date) + '</span></div>'
@@ -400,6 +481,16 @@
   $('btn-refresh').addEventListener('click', loadHistory);
   $('in-site').addEventListener('change', onSiteChange);
   $('in-task').addEventListener('change', onTaskChange);
+  $('btn-checkout-manual').addEventListener('click', doCheckoutManual);
+  $('btn-fix').addEventListener('click', doFix);
+  $('btn-fix-skip').addEventListener('click', function(){
+    STATE.fixable = null; renderHome(); loadHistory();
+  });
+  $('btn-manual-toggle').addEventListener('click', function(){
+    var box = $('manual-box'), show = box.classList.contains('hidden');
+    box.classList.toggle('hidden', !show);
+    if (show && STATE.openLog) $('in-end-at').value = toLocalInput(new Date());
+  });
 
   boot();
 </script>
