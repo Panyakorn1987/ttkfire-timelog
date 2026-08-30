@@ -374,17 +374,21 @@
   }
 
   function doCheckin(){
-    var site = $('in-site').value, task = $('in-task').value, detail = $('in-detail').value.trim();
-    var newSite = $('in-new-site').value.trim(), newTask = $('in-new-task').value.trim();
-    if (site === '__NEW__' && !newSite) return toast('กรุณากรอกชื่อสถานที่ใหม่');
-    if (task === '__NEW__' && !newTask) return toast('กรุณากรอกชื่อประเภทงานใหม่');
+    var siteIsNew = $('in-site').value === '__NEW__';
+    var taskIsNew = $('in-task').value === '__NEW__';
+    // ส่ง "ชื่อจริง" ไปเสมอ ไม่ส่ง __NEW__ ให้เซิร์ฟเวอร์ (กันข้อมูลเพี้ยนถ้าเวอร์ชันไม่ตรงกัน)
+    var site = siteIsNew ? $('in-new-site').value.trim() : $('in-site').value;
+    var task = taskIsNew ? $('in-new-task').value.trim() : $('in-task').value;
+    var detail = $('in-detail').value.trim();
+    if (siteIsNew && !site) return toast('กรุณากรอกชื่อสถานที่ใหม่');
+    if (taskIsNew && !task) return toast('กรุณากรอกชื่อประเภทงานใหม่');
 
     var btn = $('btn-checkin'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
     $('in-loc').textContent = '📍 กำลังอ่านพิกัด GPS…';
     getLocation().then(function(loc){
       if (STATE.requireLoc && !loc.lat) { throw new Error('กรุณาอนุญาตการเข้าถึงตำแหน่ง (GPS)'); }
-      return api('checkin', { siteName: site, newSite: newSite,
-                              taskType: task, newTask: newTask,
+      return api('checkin', { siteName: site, isNewSite: siteIsNew,
+                              taskType: task, isNewTask: taskIsNew,
                               taskDetail: detail, lat: loc.lat, lng: loc.lng });
     }).then(function(d){
       STATE.openLog = { logId: d.logId, site: d.siteName || site, task: d.taskType || task,
