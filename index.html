@@ -103,6 +103,11 @@
       <div><b id="hello-name">—</b><div class="muted" style="font-size:12px" id="hello-role"></div></div>
       <span class="badge ready">พร้อมเริ่มงาน</span>
     </div>
+    <div id="advance-note" class="hidden" style="background:rgba(56,189,248,.12);
+      border-left:4px solid var(--accent); border-radius:0 8px 8px 0; padding:10px 12px; font-size:13px;">
+      ⏩ กด “เริ่มงาน” จะปิดงานที่ <b id="advance-prev"></b> ที่ทำอยู่ให้อัตโนมัติ ณ เวลานี้
+      &nbsp;<a href="#" id="advance-cancel" style="color:var(--accent)">ยกเลิก</a>
+    </div>
     <label>สถานที่ทำงาน</label>
     <select id="in-site"></select>
     <div id="new-site-box" class="hidden">
@@ -135,6 +140,8 @@
     <div class="kv"><span>เริ่มเมื่อ</span><b id="w-since"></b></div>
     <div class="loc" id="w-loc">📍 ระบบจะบันทึกพิกัด GPS ตอนกด “เลิกงาน”</div>
     <button class="btn-stop" id="btn-checkout">🔴 เลิกงาน</button>
+    <button class="btn-go" id="btn-next-job" style="background:var(--accent);color:#04220f;margin-top:10px">
+      ⏩ ไปงานถัดไป (ปิดงานนี้อัตโนมัติ)</button>
     <div class="center" style="margin-top:12px">
       <button class="btn-ghost" id="btn-manual-toggle">🕐 ลืมกด? ระบุเวลาเลิกงานเอง</button>
     </div>
@@ -203,10 +210,11 @@
 <script>
   var API_URL = "https://script.google.com/macros/s/AKfycbxluA73dft9pgW9Uj6mp_eJ5CgNW6McAimTb5rd18LU09i2URWuxq80MN63VwojO-kvAw/exec";
   var LIFF_ID = "2011332608-mTnD0VGK";
-  var APP_VERSION = "2026.08.31-1";   // เทียบกับเวอร์ชันเซิร์ฟเวอร์ เพื่อเตือนเมื่อลืม Deploy
+  var APP_VERSION = "2026.08.31-2";   // เทียบกับเวอร์ชันเซิร์ฟเวอร์ เพื่อเตือนเมื่อลืม Deploy
 
   var STATE = { idToken:null, employee:null, openLog:null, fixable:null,
-                sites:[], tasks:[], timer:null, requireLoc:false };
+                sites:[], tasks:[], timer:null, requireLoc:false,
+                autoAdvance:false, advancing:false };
 
   function $(id){ return document.getElementById(id); }
   function showView(id){
@@ -333,6 +341,7 @@
           if (d.requireCode) $('reg-code-box').classList.remove('hidden');
           showView('view-register');
         } else {
+          STATE.autoAdvance = !!d.autoAdvance;
           if (d.isAdmin) setupTeam(d.employees || []);
           renderHome();
           loadHistory();
@@ -361,17 +370,22 @@
       showView('view-fix');
       return;
     }
-    if (STATE.openLog) {
+    if (STATE.openLog && !STATE.advancing) {
       $('w-name').textContent = emp.name;
       $('w-site').textContent = STATE.openLog.site;
       $('w-task').textContent = STATE.openLog.task;
       $('w-detail').textContent = STATE.openLog.detail || '-';
       $('w-since').textContent = fmtDT(STATE.openLog.checkInAt);
       startTimer(new Date(STATE.openLog.checkInAt));
+      $('btn-next-job').classList.toggle('hidden', !STATE.autoAdvance);
       showView('view-working');
     } else {
       $('hello-name').textContent = emp.name;
       $('hello-role').textContent = emp.role || '';
+      var adv = STATE.advancing && STATE.openLog;
+      $('advance-note').classList.toggle('hidden', !adv);
+      if (adv) $('advance-prev').textContent = STATE.openLog.site;
+      $('in-detail').value = '';
       $('in-site').innerHTML = STATE.sites.map(function(s){
         return '<option>' + esc(s.name) + '</option>'; }).join('')
         + '<option value="__NEW__">➕ เพิ่มสถานที่ใหม่…</option>';
@@ -432,27 +446,40 @@
     if (siteIsNew && !site) return toast('กรุณากรอกชื่อสถานที่ใหม่');
     if (taskIsNew && !task) return toast('กรุณากรอกชื่อประเภทงานใหม่');
 
+    var advancing = STATE.advancing && !!STATE.openLog;
     var btn = $('btn-checkin'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
     $('in-loc').textContent = '📍 กำลังอ่านพิกัด GPS…';
     getLocation().then(function(loc){
       if (STATE.requireLoc && !loc.lat) { throw new Error('กรุณาอนุญาตการเข้าถึงตำแหน่ง (GPS)'); }
       return api('checkin', { siteName: site, isNewSite: siteIsNew,
                               taskType: task, isNewTask: taskIsNew,
-                              taskDetail: detail, lat: loc.lat, lng: loc.lng });
+                              taskDetail: detail, lat: loc.lat, lng: loc.lng,
+                              advance: advancing });
     }).then(function(d){
+      STATE.advancing = false;
       STATE.openLog = { logId: d.logId, site: d.siteName || site, task: d.taskType || task,
                         detail: detail, checkInAt: d.checkInAt };
       $('in-new-site').value = ''; $('in-new-task').value = '';
       if (d.addedSite && d.siteName) STATE.sites.push({ name: d.siteName });
       if (d.addedTask && d.taskType) STATE.tasks.push({ name: d.taskType });
-      toast((d.addedSite || d.addedTask)
-        ? 'เริ่มงานแล้ว ✅ บันทึกรายการใหม่เรียบร้อย'
-        : 'เริ่มงานแล้ว ✅ ส่งรายงานเข้ากลุ่มผู้บริหารแล้ว');
+      toast(d.chainedFrom
+        ? 'ปิดงาน ' + d.chainedFrom.site + ' (' + d.chainedFrom.hours + ' ชม.) แล้วเริ่มงานใหม่ ✅'
+        : (d.addedSite || d.addedTask)
+          ? 'เริ่มงานแล้ว ✅ บันทึกรายการใหม่เรียบร้อย'
+          : 'เริ่มงานแล้ว ✅ ส่งรายงานเข้ากลุ่มผู้บริหารแล้ว');
       renderHome(); loadHistory();
     }).catch(function(e){
       toast(e.message);
       $('in-loc').textContent = '📍 ระบบจะบันทึกพิกัด GPS ตอนกด “เริ่มงาน”';
     }).finally(function(){ btn.disabled = false; btn.textContent = '🟢 เริ่มงาน'; });
+  }
+
+  function goNextJob(){
+    if (!confirm('ไปงานถัดไป — ระบบจะปิดงานที่ ' + (STATE.openLog ? STATE.openLog.site : '') +
+                 ' ให้อัตโนมัติ ณ เวลานี้')) return;
+    STATE.advancing = true;
+    clearInterval(STATE.timer);
+    renderHome();
   }
 
   function doCheckout(){
@@ -540,7 +567,8 @@
         }
         $('t-list').innerHTML = d.logs.map(function(l){
           var mark = l.status === 'CLOSED_MANUAL' ? ' ✍️'
-                   : l.status === 'AUTO_CLOSED'   ? ' 🤖' : '';
+                   : l.status === 'AUTO_CLOSED'   ? ' 🤖'
+                   : l.status === 'CLOSED_CHAIN'  ? ' ⏩' : '';
           var out = l.checkOut
             ? esc(l.checkOut) + (l.duration ? ' · ' + l.duration + ' ชม.' : '') + mark
             : '<span style="color:#22c55e">กำลังทำงาน</span>';
@@ -570,7 +598,8 @@
       }
       $('hist-list').innerHTML = d.logs.map(function(l){
         var mark = l.status === 'CLOSED_MANUAL' ? ' ✍️'
-                 : l.status === 'AUTO_CLOSED'   ? ' 🤖' : '';
+                 : l.status === 'AUTO_CLOSED'   ? ' 🤖'
+                   : l.status === 'CLOSED_CHAIN'  ? ' ⏩' : '';
         var out = l.checkOut
           ? esc(l.checkOut) + (l.duration ? ' · ' + l.duration + ' ชม.' : '') + mark
           : '<span style="color:#22c55e">กำลังทำงาน</span>';
@@ -586,6 +615,10 @@
   $('btn-register').addEventListener('click', doRegister);
   $('btn-checkin').addEventListener('click', doCheckin);
   $('btn-checkout').addEventListener('click', doCheckout);
+  $('btn-next-job').addEventListener('click', goNextJob);
+  $('advance-cancel').addEventListener('click', function(e){
+    e.preventDefault(); STATE.advancing = false; renderHome();
+  });
   $('btn-refresh').addEventListener('click', loadHistory);
   $('in-site').addEventListener('change', onSiteChange);
   $('in-task').addEventListener('change', onTaskChange);
