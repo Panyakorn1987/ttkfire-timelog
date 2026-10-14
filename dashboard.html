@@ -258,12 +258,29 @@
   function hoursTxt(h){ return (Math.round(h*100)/100).toString(); }
 
   // ---------- API ----------
-  function api(action, payload){
-    if (DEMO) return mockApi(action, payload||{});
+  // ยิงทีละคำขอ (Apps Script ไม่ชอบหลายคำขอพร้อมกันจากหน้าเดียว) และลองใหม่ 1 ครั้งเมื่อเครือข่ายสะดุด
+  var CHAIN = Promise.resolve();
+  function rawApi(action, payload){
     var body = Object.assign({ action:action, idToken:STATE.idToken }, payload||{});
     return fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(body) })
       .then(function(r){ return r.json(); })
       .then(function(d){ if(!d.ok) throw new Error(d.error||'เกิดข้อผิดพลาด'); return d; });
+  }
+  function isNetErr(e){ return e && e.name==='TypeError'; }
+  function api(action, payload){
+    if (DEMO) return mockApi(action, payload||{});
+    var run = function(){
+      return rawApi(action,payload).catch(function(e){
+        if(!isNetErr(e)) throw e;
+        return new Promise(function(r){ setTimeout(r,1500); }).then(function(){ return rawApi(action,payload); });
+      }).catch(function(e){
+        if(isNetErr(e)) throw new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ (ตรวจอินเทอร์เน็ต หรือปิดส่วนเสริมที่บล็อกเว็บ)');
+        throw e;
+      });
+    };
+    var p = CHAIN.then(run);
+    CHAIN = p.catch(function(){});
+    return p;
   }
   function isAuthErr(e){ return /token|expired|หมดอายุ|unauthor|ล็อกอิน|login/i.test(String(e&&e.message)); }
   function showMsg(html, cls){ $('msg').innerHTML = html ? '<div class="notice '+(cls||'')+'">'+html+'</div>' : ''; }
